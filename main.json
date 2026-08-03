@@ -1,0 +1,1133 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.42.1.51946",
+      "templateHash": "7710250888535459989"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region for all resources"
+      }
+    },
+    "suffix": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 8,
+      "metadata": {
+        "description": "Short suffix for resource naming (lowercase, no special chars, max 8)"
+      }
+    },
+    "environment": {
+      "type": "string",
+      "defaultValue": "dev",
+      "allowedValues": [
+        "dev",
+        "test",
+        "prod"
+      ],
+      "metadata": {
+        "description": "Environment (dev, test, prod)"
+      }
+    },
+    "existingPeSubnetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the existing subnet for private endpoints"
+      }
+    },
+    "existingComputeSubnetId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Resource ID of the existing subnet for AI Foundry compute injection (optional)"
+      }
+    },
+    "dnsZoneIdAml": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.api.azureml.ms DNS zone"
+      }
+    },
+    "dnsZoneIdNotebooks": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.notebooks.azure.net DNS zone"
+      }
+    },
+    "dnsZoneIdBlob": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.blob.core.windows.net DNS zone"
+      }
+    },
+    "dnsZoneIdFile": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.file.core.windows.net DNS zone"
+      }
+    },
+    "dnsZoneIdKeyVault": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.vaultcore.azure.net DNS zone"
+      }
+    },
+    "dnsZoneIdAcr": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.azurecr.io DNS zone"
+      }
+    },
+    "dnsZoneIdOpenAi": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.openai.azure.com DNS zone"
+      }
+    },
+    "dnsZoneIdCognitiveServices": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of privatelink.cognitiveservices.azure.com DNS zone"
+      }
+    },
+    "existingKeyVaultName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Key Vault (leave empty to create new)"
+      }
+    },
+    "existingKeyVaultRg": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of existing Key Vault"
+      }
+    },
+    "existingStorageAccountName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Storage Account (leave empty to create new)"
+      }
+    },
+    "existingStorageAccountRg": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of existing Storage Account"
+      }
+    },
+    "existingAcrName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Container Registry (leave empty to create new)"
+      }
+    },
+    "existingAcrRg": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of existing ACR"
+      }
+    },
+    "existingLogAnalyticsName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Log Analytics Workspace (leave empty to create new)"
+      }
+    },
+    "existingLogAnalyticsRg": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of existing Log Analytics workspace"
+      }
+    },
+    "deployAzureOpenAi": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy Azure OpenAI account (set false to skip)"
+      }
+    },
+    "existingOpenAiName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Name of existing Azure OpenAI account (leave empty to create new)"
+      }
+    },
+    "existingOpenAiRg": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().name]",
+      "metadata": {
+        "description": "Resource group of existing Azure OpenAI account"
+      }
+    },
+    "openAiModelDeployments": {
+      "type": "array",
+      "defaultValue": [
+        {
+          "name": "gpt-4o",
+          "model": "gpt-4o",
+          "version": "2024-08-06",
+          "capacity": 10
+        },
+        {
+          "name": "text-embedding-ada-002",
+          "model": "text-embedding-ada-002",
+          "version": "2",
+          "capacity": 10
+        }
+      ],
+      "metadata": {
+        "description": "Model deployments for new Azure OpenAI account"
+      }
+    }
+  },
+  "variables": {
+    "dnsZoneIds": {
+      "aml": "[parameters('dnsZoneIdAml')]",
+      "notebooks": "[parameters('dnsZoneIdNotebooks')]",
+      "blob": "[parameters('dnsZoneIdBlob')]",
+      "file": "[parameters('dnsZoneIdFile')]",
+      "keyVault": "[parameters('dnsZoneIdKeyVault')]",
+      "acr": "[parameters('dnsZoneIdAcr')]",
+      "openai": "[parameters('dnsZoneIdOpenAi')]",
+      "cognitiveServices": "[parameters('dnsZoneIdCognitiveServices')]"
+    },
+    "createKeyVault": "[empty(parameters('existingKeyVaultName'))]",
+    "createStorage": "[empty(parameters('existingStorageAccountName'))]",
+    "createAcr": "[empty(parameters('existingAcrName'))]",
+    "createLogAnalytics": "[empty(parameters('existingLogAnalyticsName'))]",
+    "createOpenAi": "[and(parameters('deployAzureOpenAi'), empty(parameters('existingOpenAiName')))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-supporting-services",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "suffix": {
+            "value": "[parameters('suffix')]"
+          },
+          "peSubnetId": {
+            "value": "[parameters('existingPeSubnetId')]"
+          },
+          "dnsZoneIds": {
+            "value": "[variables('dnsZoneIds')]"
+          },
+          "createKeyVault": {
+            "value": "[variables('createKeyVault')]"
+          },
+          "createStorage": {
+            "value": "[variables('createStorage')]"
+          },
+          "createAcr": {
+            "value": "[variables('createAcr')]"
+          },
+          "createLogAnalytics": {
+            "value": "[variables('createLogAnalytics')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "3910627177664164025"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "suffix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name suffix (must be globally unique for storage)"
+              }
+            },
+            "peSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for private endpoints"
+              }
+            },
+            "dnsZoneIds": {
+              "type": "object",
+              "metadata": {
+                "description": "DNS Zone IDs for private endpoint registration"
+              }
+            },
+            "createKeyVault": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Create new Key Vault"
+              }
+            },
+            "createStorage": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Create new Storage Account"
+              }
+            },
+            "createAcr": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Create new Container Registry"
+              }
+            },
+            "createLogAnalytics": {
+              "type": "bool",
+              "defaultValue": true,
+              "metadata": {
+                "description": "Create new Log Analytics + App Insights"
+              }
+            }
+          },
+          "resources": [
+            {
+              "condition": "[parameters('createKeyVault')]",
+              "type": "Microsoft.KeyVault/vaults",
+              "apiVersion": "2023-07-01",
+              "name": "[format('kv-aif-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "family": "A",
+                  "name": "standard"
+                },
+                "tenantId": "[subscription().tenantId]",
+                "enableRbacAuthorization": true,
+                "enableSoftDelete": true,
+                "publicNetworkAccess": "Disabled",
+                "networkAcls": {
+                  "defaultAction": "Deny",
+                  "bypass": "AzureServices"
+                }
+              }
+            },
+            {
+              "condition": "[parameters('createKeyVault')]",
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-kv-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-kv-{0}', parameters('suffix'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.KeyVault/vaults', format('kv-aif-{0}', parameters('suffix')))]",
+                      "groupIds": [
+                        "vault"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.KeyVault/vaults', format('kv-aif-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createKeyVault')]",
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-kv-{0}', parameters('suffix')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "keyvault",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').keyVault]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-kv-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createStorage')]",
+              "type": "Microsoft.Storage/storageAccounts",
+              "apiVersion": "2023-05-01",
+              "name": "[format('staif{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "kind": "StorageV2",
+              "sku": {
+                "name": "Standard_LRS"
+              },
+              "properties": {
+                "allowSharedKeyAccess": false,
+                "publicNetworkAccess": "Disabled",
+                "networkAcls": {
+                  "defaultAction": "Deny",
+                  "bypass": "AzureServices"
+                },
+                "minimumTlsVersion": "TLS1_2",
+                "supportsHttpsTrafficOnly": true
+              }
+            },
+            {
+              "condition": "[parameters('createStorage')]",
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-st-blob-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-st-blob-{0}', parameters('suffix'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', format('staif{0}', parameters('suffix')))]",
+                      "groupIds": [
+                        "blob"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', format('staif{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createStorage')]",
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-st-blob-{0}', parameters('suffix')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "blob",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').blob]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-st-blob-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createStorage')]",
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-st-file-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-st-file-{0}', parameters('suffix'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.Storage/storageAccounts', format('staif{0}', parameters('suffix')))]",
+                      "groupIds": [
+                        "file"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Storage/storageAccounts', format('staif{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createStorage')]",
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-st-file-{0}', parameters('suffix')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "file",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').file]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-st-file-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createAcr')]",
+              "type": "Microsoft.ContainerRegistry/registries",
+              "apiVersion": "2023-11-01-preview",
+              "name": "[format('craif{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "sku": {
+                "name": "Premium"
+              },
+              "properties": {
+                "adminUserEnabled": false,
+                "publicNetworkAccess": "Disabled",
+                "networkRuleBypassOptions": "AzureServices"
+              }
+            },
+            {
+              "condition": "[parameters('createAcr')]",
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-acr-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-acr-{0}', parameters('suffix'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.ContainerRegistry/registries', format('craif{0}', parameters('suffix')))]",
+                      "groupIds": [
+                        "registry"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ContainerRegistry/registries', format('craif{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createAcr')]",
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-acr-{0}', parameters('suffix')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "acr",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').acr]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-acr-{0}', parameters('suffix')))]"
+              ]
+            },
+            {
+              "condition": "[parameters('createLogAnalytics')]",
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2023-09-01",
+              "name": "[format('law-aif-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "sku": {
+                  "name": "PerGB2018"
+                },
+                "retentionInDays": 30
+              }
+            },
+            {
+              "condition": "[parameters('createLogAnalytics')]",
+              "type": "Microsoft.Insights/components",
+              "apiVersion": "2020-02-02",
+              "name": "[format('appi-aif-{0}', parameters('suffix'))]",
+              "location": "[parameters('location')]",
+              "kind": "web",
+              "properties": {
+                "Application_Type": "web",
+                "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-aif-{0}', parameters('suffix')))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.OperationalInsights/workspaces', format('law-aif-{0}', parameters('suffix')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "keyVaultId": {
+              "type": "string",
+              "value": "[if(parameters('createKeyVault'), resourceId('Microsoft.KeyVault/vaults', format('kv-aif-{0}', parameters('suffix'))), '')]"
+            },
+            "storageAccountId": {
+              "type": "string",
+              "value": "[if(parameters('createStorage'), resourceId('Microsoft.Storage/storageAccounts', format('staif{0}', parameters('suffix'))), '')]"
+            },
+            "containerRegistryId": {
+              "type": "string",
+              "value": "[if(parameters('createAcr'), resourceId('Microsoft.ContainerRegistry/registries', format('craif{0}', parameters('suffix'))), '')]"
+            },
+            "appInsightsId": {
+              "type": "string",
+              "value": "[if(parameters('createLogAnalytics'), resourceId('Microsoft.Insights/components', format('appi-aif-{0}', parameters('suffix'))), '')]"
+            },
+            "keyVaultName": {
+              "type": "string",
+              "value": "[if(parameters('createKeyVault'), format('kv-aif-{0}', parameters('suffix')), '')]"
+            },
+            "storageAccountName": {
+              "type": "string",
+              "value": "[if(parameters('createStorage'), format('staif{0}', parameters('suffix')), '')]"
+            },
+            "acrName": {
+              "type": "string",
+              "value": "[if(parameters('createAcr'), format('craif{0}', parameters('suffix')), '')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-ai-foundry",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "suffix": {
+            "value": "[parameters('suffix')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "peSubnetId": {
+            "value": "[parameters('existingPeSubnetId')]"
+          },
+          "computeSubnetId": {
+            "value": "[parameters('existingComputeSubnetId')]"
+          },
+          "keyVaultId": "[if(variables('createKeyVault'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.keyVaultId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('existingKeyVaultRg')), 'Microsoft.KeyVault/vaults', parameters('existingKeyVaultName'))))]",
+          "storageAccountId": "[if(variables('createStorage'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.storageAccountId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('existingStorageAccountRg')), 'Microsoft.Storage/storageAccounts', parameters('existingStorageAccountName'))))]",
+          "containerRegistryId": "[if(variables('createAcr'), createObject('value', reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.containerRegistryId.value), createObject('value', extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, parameters('existingAcrRg')), 'Microsoft.ContainerRegistry/registries', parameters('existingAcrName'))))]",
+          "appInsightsId": {
+            "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.appInsightsId.value]"
+          },
+          "dnsZoneIds": {
+            "value": "[variables('dnsZoneIds')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "8696356402297707773"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "suffix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name suffix"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "defaultValue": "dev",
+              "metadata": {
+                "description": "Environment label"
+              }
+            },
+            "peSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for private endpoints"
+              }
+            },
+            "computeSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Subnet ID for compute injection (optional)"
+              }
+            },
+            "keyVaultId": {
+              "type": "string",
+              "metadata": {
+                "description": "Key Vault resource ID"
+              }
+            },
+            "storageAccountId": {
+              "type": "string",
+              "metadata": {
+                "description": "Storage Account resource ID"
+              }
+            },
+            "containerRegistryId": {
+              "type": "string",
+              "metadata": {
+                "description": "Container Registry resource ID"
+              }
+            },
+            "appInsightsId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Application Insights resource ID (optional)"
+              }
+            },
+            "logAnalyticsId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Log Analytics Workspace resource ID (optional, used if appInsights not provided)"
+              }
+            },
+            "dnsZoneIds": {
+              "type": "object",
+              "metadata": {
+                "description": "DNS Zone IDs for private endpoint registration"
+              }
+            }
+          },
+          "variables": {
+            "hubName": "[format('aihub-{0}-{1}', parameters('suffix'), parameters('environment'))]",
+            "projectName": "[format('aiproj-{0}-{1}', parameters('suffix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.MachineLearningServices/workspaces",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('hubName')]",
+              "location": "[parameters('location')]",
+              "kind": "Hub",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "friendlyName": "[format('AI Foundry Hub - {0} ({1})', parameters('suffix'), parameters('environment'))]",
+                "description": "AI Foundry Hub with private networking - hub-spoke model",
+                "keyVault": "[parameters('keyVaultId')]",
+                "storageAccount": "[parameters('storageAccountId')]",
+                "containerRegistry": "[parameters('containerRegistryId')]",
+                "applicationInsights": "[if(not(empty(parameters('appInsightsId'))), parameters('appInsightsId'), null())]",
+                "publicNetworkAccess": "Disabled",
+                "managedNetwork": {
+                  "isolationMode": "AllowInternetOutbound"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.MachineLearningServices/workspaces",
+              "apiVersion": "2024-04-01",
+              "name": "[variables('projectName')]",
+              "location": "[parameters('location')]",
+              "kind": "Project",
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "friendlyName": "[format('AI Foundry Project - {0} ({1})', parameters('suffix'), parameters('environment'))]",
+                "description": "AI Foundry Project - inherits networking from Hub",
+                "hubResourceId": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName'))]",
+                "publicNetworkAccess": "Disabled"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-aihub-{0}-{1}', parameters('suffix'), parameters('environment'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-aihub-{0}-{1}', parameters('suffix'), parameters('environment'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName'))]",
+                      "groupIds": [
+                        "amlworkspace"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-aihub-{0}-{1}', parameters('suffix'), parameters('environment')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "aml",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').aml]"
+                    }
+                  },
+                  {
+                    "name": "notebooks",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').notebooks]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-aihub-{0}-{1}', parameters('suffix'), parameters('environment')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "hubId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName'))]"
+            },
+            "hubName": {
+              "type": "string",
+              "value": "[variables('hubName')]"
+            },
+            "hubPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.MachineLearningServices/workspaces', variables('hubName')), '2024-04-01', 'full').identity.principalId]"
+            },
+            "projectId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.MachineLearningServices/workspaces', variables('projectName'))]"
+            },
+            "projectName": {
+              "type": "string",
+              "value": "[variables('projectName')]"
+            },
+            "projectPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.MachineLearningServices/workspaces', variables('projectName')), '2024-04-01', 'full').identity.principalId]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services')]"
+      ]
+    },
+    {
+      "condition": "[variables('createOpenAi')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "deploy-azure-openai",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "suffix": {
+            "value": "[parameters('suffix')]"
+          },
+          "environment": {
+            "value": "[parameters('environment')]"
+          },
+          "peSubnetId": {
+            "value": "[parameters('existingPeSubnetId')]"
+          },
+          "dnsZoneIds": {
+            "value": "[variables('dnsZoneIds')]"
+          },
+          "modelDeployments": {
+            "value": "[parameters('openAiModelDeployments')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.42.1.51946",
+              "templateHash": "7001387653350976038"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "metadata": {
+                "description": "Azure region"
+              }
+            },
+            "suffix": {
+              "type": "string",
+              "metadata": {
+                "description": "Resource name suffix"
+              }
+            },
+            "environment": {
+              "type": "string",
+              "defaultValue": "dev",
+              "metadata": {
+                "description": "Environment label"
+              }
+            },
+            "peSubnetId": {
+              "type": "string",
+              "metadata": {
+                "description": "Subnet ID for private endpoints"
+              }
+            },
+            "dnsZoneIds": {
+              "type": "object",
+              "metadata": {
+                "description": "DNS Zone IDs for private endpoint registration"
+              }
+            },
+            "sku": {
+              "type": "string",
+              "defaultValue": "S0",
+              "allowedValues": [
+                "S0"
+              ],
+              "metadata": {
+                "description": "Azure OpenAI SKU"
+              }
+            },
+            "modelDeployments": {
+              "type": "array",
+              "defaultValue": [
+                {
+                  "name": "gpt-4o",
+                  "model": "gpt-4o",
+                  "version": "2024-08-06",
+                  "capacity": 10
+                },
+                {
+                  "name": "text-embedding-ada-002",
+                  "model": "text-embedding-ada-002",
+                  "version": "2",
+                  "capacity": 10
+                }
+              ],
+              "metadata": {
+                "description": "Model deployments to create"
+              }
+            }
+          },
+          "variables": {
+            "accountName": "[format('oai-{0}-{1}', parameters('suffix'), parameters('environment'))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.CognitiveServices/accounts",
+              "apiVersion": "2024-04-01-preview",
+              "name": "[variables('accountName')]",
+              "location": "[parameters('location')]",
+              "kind": "OpenAI",
+              "sku": {
+                "name": "[parameters('sku')]"
+              },
+              "identity": {
+                "type": "SystemAssigned"
+              },
+              "properties": {
+                "customSubDomainName": "[variables('accountName')]",
+                "publicNetworkAccess": "Disabled",
+                "networkAcls": {
+                  "defaultAction": "Deny",
+                  "ipRules": [],
+                  "virtualNetworkRules": []
+                },
+                "disableLocalAuth": false
+              }
+            },
+            {
+              "copy": {
+                "name": "deployments",
+                "count": "[length(parameters('modelDeployments'))]",
+                "mode": "serial",
+                "batchSize": 1
+              },
+              "type": "Microsoft.CognitiveServices/accounts/deployments",
+              "apiVersion": "2024-04-01-preview",
+              "name": "[format('{0}/{1}', variables('accountName'), parameters('modelDeployments')[copyIndex()].name)]",
+              "sku": {
+                "name": "Standard",
+                "capacity": "[parameters('modelDeployments')[copyIndex()].capacity]"
+              },
+              "properties": {
+                "model": {
+                  "format": "OpenAI",
+                  "name": "[parameters('modelDeployments')[copyIndex()].model]",
+                  "version": "[parameters('modelDeployments')[copyIndex()].version]"
+                }
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('accountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints",
+              "apiVersion": "2024-01-01",
+              "name": "[format('pe-oai-{0}-{1}', parameters('suffix'), parameters('environment'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "subnet": {
+                  "id": "[parameters('peSubnetId')]"
+                },
+                "privateLinkServiceConnections": [
+                  {
+                    "name": "[format('pe-oai-{0}-{1}', parameters('suffix'), parameters('environment'))]",
+                    "properties": {
+                      "privateLinkServiceId": "[resourceId('Microsoft.CognitiveServices/accounts', variables('accountName'))]",
+                      "groupIds": [
+                        "account"
+                      ]
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.CognitiveServices/accounts', variables('accountName'))]"
+              ]
+            },
+            {
+              "type": "Microsoft.Network/privateEndpoints/privateDnsZoneGroups",
+              "apiVersion": "2024-01-01",
+              "name": "[format('{0}/{1}', format('pe-oai-{0}-{1}', parameters('suffix'), parameters('environment')), 'default')]",
+              "properties": {
+                "privateDnsZoneConfigs": [
+                  {
+                    "name": "openai",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').openai]"
+                    }
+                  },
+                  {
+                    "name": "cognitiveservices",
+                    "properties": {
+                      "privateDnsZoneId": "[parameters('dnsZoneIds').cognitiveServices]"
+                    }
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Network/privateEndpoints', format('pe-oai-{0}-{1}', parameters('suffix'), parameters('environment')))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "openAiAccountId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.CognitiveServices/accounts', variables('accountName'))]"
+            },
+            "openAiAccountName": {
+              "type": "string",
+              "value": "[variables('accountName')]"
+            },
+            "openAiEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('accountName')), '2024-04-01-preview').endpoint]"
+            },
+            "openAiPrincipalId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('accountName')), '2024-04-01-preview', 'full').identity.principalId]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "openAiEndpoint": {
+      "type": "string",
+      "value": "[if(variables('createOpenAi'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-azure-openai'), '2025-04-01').outputs.openAiEndpoint.value, '')]"
+    },
+    "openAiAccountName": {
+      "type": "string",
+      "value": "[if(variables('createOpenAi'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-azure-openai'), '2025-04-01').outputs.openAiAccountName.value, parameters('existingOpenAiName'))]"
+    },
+    "aiHubName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.hubName.value]"
+    },
+    "aiHubId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.hubId.value]"
+    },
+    "aiProjectName": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.projectName.value]"
+    },
+    "aiProjectId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.projectId.value]"
+    },
+    "hubPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.hubPrincipalId.value]"
+    },
+    "projectPrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', 'deploy-ai-foundry'), '2025-04-01').outputs.projectPrincipalId.value]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "value": "[if(variables('createKeyVault'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.keyVaultName.value, parameters('existingKeyVaultName'))]"
+    },
+    "storageAccountName": {
+      "type": "string",
+      "value": "[if(variables('createStorage'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.storageAccountName.value, parameters('existingStorageAccountName'))]"
+    },
+    "acrName": {
+      "type": "string",
+      "value": "[if(variables('createAcr'), reference(resourceId('Microsoft.Resources/deployments', 'deploy-supporting-services'), '2025-04-01').outputs.acrName.value, parameters('existingAcrName'))]"
+    }
+  }
+}
