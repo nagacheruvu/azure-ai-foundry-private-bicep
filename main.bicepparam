@@ -47,15 +47,15 @@ param existingOpenAiName = ''           // e.g., 'oai-shared-prod'
 param existingOpenAiRg = ''
 param openAiModelDeployments = [
   {
-    name: 'gpt-4o'
-    model: 'gpt-4o'
-    version: '2024-08-06'
+    name: 'gpt-51'
+    model: 'gpt-5.1'
+    version: '2025-11-13'
     capacity: 10
   }
   {
-    name: 'text-embedding-ada-002'
-    model: 'text-embedding-ada-002'
-    version: '2'
+    name: 'text-embedding-3-large'
+    model: 'text-embedding-3-large'
+    version: '1'
     capacity: 10
   }
 ]
