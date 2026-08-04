@@ -154,25 +154,9 @@ module newServices 'modules/supporting-services.bicep' = {
 // AI Foundry Hub + Project with Private Endpoint
 // ---------------------------------------------------------------------------
 
-module aiFoundry 'modules/ai-foundry.bicep' = {
-  name: 'deploy-ai-foundry'
-  params: {
-    location: location
-    suffix: suffix
-    environment: environment
-    peSubnetId: existingPeSubnetId
-    computeSubnetId: existingComputeSubnetId
-    keyVaultId: createKeyVault ? newServices.outputs.keyVaultId : existingKv.id
-    storageAccountId: createStorage ? newServices.outputs.storageAccountId : existingStorage.id
-    containerRegistryId: createAcr ? newServices.outputs.containerRegistryId : existingAcrRef.id
-    appInsightsId: newServices.outputs.appInsightsId
-    dnsZoneIds: dnsZoneIds
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 5. Azure OpenAI with Private Endpoint (optional)
-// ---------------------------------------------------------------------------
+@description('Managed network isolation mode for AI Foundry Hub')
+@allowed(['AllowInternetOutbound', 'AllowOnlyApprovedOutbound'])
+param managedNetworkIsolationMode string = 'AllowOnlyApprovedOutbound'
 
 @description('Deploy Azure OpenAI account (set false to skip)')
 param deployAzureOpenAi bool = true
@@ -186,15 +170,15 @@ param existingOpenAiRg string = resourceGroup().name
 @description('Model deployments for new Azure OpenAI account')
 param openAiModelDeployments array = [
   {
-    name: 'gpt-4o'
-    model: 'gpt-4o'
-    version: '2024-08-06'
+    name: 'gpt-51'
+    model: 'gpt-5.1'
+    version: '2025-11-13'
     capacity: 10
   }
   {
-    name: 'text-embedding-ada-002'
-    model: 'text-embedding-ada-002'
-    version: '2'
+    name: 'text-embedding-3-large'
+    model: 'text-embedding-3-large'
+    version: '1'
     capacity: 10
   }
 ]
@@ -206,6 +190,10 @@ resource existingOpenAiRef 'Microsoft.CognitiveServices/accounts@2024-04-01-prev
   scope: resourceGroup(existingOpenAiRg)
 }
 
+// ---------------------------------------------------------------------------
+// 4. Azure OpenAI with Private Endpoint (deploys before Hub for outbound rule)
+// ---------------------------------------------------------------------------
+
 module azureOpenAi 'modules/azure-openai.bicep' = if (createOpenAi) {
   name: 'deploy-azure-openai'
   params: {
@@ -215,6 +203,31 @@ module azureOpenAi 'modules/azure-openai.bicep' = if (createOpenAi) {
     peSubnetId: existingPeSubnetId
     dnsZoneIds: dnsZoneIds
     modelDeployments: openAiModelDeployments
+  }
+}
+
+// Resolve OpenAI account ID for the Hub managed network outbound rule
+var openAiAccountId = createOpenAi ? azureOpenAi!.outputs.openAiAccountId : (!empty(existingOpenAiName) ? existingOpenAiRef.id : '')
+
+// ---------------------------------------------------------------------------
+// 5. AI Foundry Hub + Project (depends on OpenAI for outbound rule)
+// ---------------------------------------------------------------------------
+
+module aiFoundry 'modules/ai-foundry.bicep' = {
+  name: 'deploy-ai-foundry'
+  params: {
+    location: location
+    suffix: suffix
+    environment: environment
+    peSubnetId: existingPeSubnetId
+    computeSubnetId: existingComputeSubnetId
+    keyVaultId: createKeyVault ? newServices.outputs.keyVaultId : existingKv.id
+    storageAccountId: createStorage ? newServices.outputs.storageAccountId : existingStorage.id
+    containerRegistryId: createAcr ? newServices.outputs.containerRegistryId : existingAcrRef.id
+    appInsightsId: newServices.outputs.appInsightsId
+    dnsZoneIds: dnsZoneIds
+    managedNetworkIsolationMode: managedNetworkIsolationMode
+    openAiAccountId: openAiAccountId
   }
 }
 

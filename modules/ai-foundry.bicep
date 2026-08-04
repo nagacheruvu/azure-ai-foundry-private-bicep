@@ -36,8 +36,30 @@ param logAnalyticsId string = ''
 @description('DNS Zone IDs for private endpoint registration')
 param dnsZoneIds object
 
+@description('Managed network isolation mode')
+@allowed(['AllowInternetOutbound', 'AllowOnlyApprovedOutbound'])
+param managedNetworkIsolationMode string = 'AllowOnlyApprovedOutbound'
+
+@description('Azure OpenAI account resource ID (for managed network outbound PE rule)')
+param openAiAccountId string = ''
+
 var hubName = 'aihub-${suffix}-${environment}'
 var projectName = 'aiproj-${suffix}-${environment}'
+
+// Outbound rules for managed network
+// System auto-creates required PE rules for storage, KV, ACR, workspace
+// We add the OpenAI PE rule when an OpenAI account is provided
+var outboundRulesWithOpenAi = {
+  'openai-pe': {
+    type: 'PrivateEndpoint'
+    destination: {
+      serviceResourceId: openAiAccountId
+      subresourceTarget: 'account'
+      sparkEnabled: false
+    }
+    category: 'UserDefined'
+  }
+}
 
 // ---------------------------------------------------------------------------
 // AI Foundry Hub (workspace kind: Hub)
@@ -58,7 +80,8 @@ resource aiHub 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
     applicationInsights: !empty(appInsightsId) ? appInsightsId : null
     publicNetworkAccess: 'Disabled'
     managedNetwork: {
-      isolationMode: 'AllowInternetOutbound'
+      isolationMode: managedNetworkIsolationMode
+      outboundRules: !empty(openAiAccountId) ? outboundRulesWithOpenAi : {}
     }
   }
 }
