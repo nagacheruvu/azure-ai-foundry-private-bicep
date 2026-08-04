@@ -40,6 +40,11 @@ param existingLogAnalyticsName = ''     // e.g., 'law-central-prod'
 param existingLogAnalyticsRg = ''
 
 // ---------------------------------------------------------------------------
+// Managed Network Isolation
+// ---------------------------------------------------------------------------
+param managedNetworkIsolationMode = 'AllowOnlyApprovedOutbound'  // Most secure: only approved PE + service tags
+
+// ---------------------------------------------------------------------------
 // Azure OpenAI
 // ---------------------------------------------------------------------------
 param deployAzureOpenAi = true

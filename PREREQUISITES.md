@@ -350,13 +350,25 @@ If passing existing resource names instead of creating new:
 
 After completing all prerequisites, fill in `main.bicepparam`:
 
-| Parameter | Where to Find |
-|-----------|---------------|
-| `existingPeSubnetId` | Portal: VNet → Subnets → PE subnet → Properties → Resource ID |
-| `dnsZoneId*` | Portal: Private DNS Zone → Properties → Resource ID |
-| `existingKeyVaultName` | Portal: Key Vault → Overview → Name |
-| `existingStorageAccountName` | Portal: Storage Account → Overview → Name |
-| `existingAcrName` | Portal: Container Registry → Overview → Name |
+| Parameter | Where to Find | Default |
+|-----------|---------------|---------|
+| `suffix` | Your naming convention (3-8 chars) | — |
+| `environment` | `dev`, `test`, or `prod` | `dev` |
+| `managedNetworkIsolationMode` | Security requirement | `AllowOnlyApprovedOutbound` |
+| `existingPeSubnetId` | Portal: VNet → Subnets → PE subnet → Properties → Resource ID | — |
+| `dnsZoneId*` | Portal: Private DNS Zone → Properties → Resource ID | — |
+| `existingKeyVaultName` | Portal: Key Vault → Overview → Name (or leave empty) | `''` |
+| `existingStorageAccountName` | Portal: Storage Account → Overview → Name (or leave empty) | `''` |
+| `existingAcrName` | Portal: Container Registry → Overview → Name (or leave empty) | `''` |
+| `deployAzureOpenAi` | Whether to deploy Azure OpenAI | `true` |
+| `openAiModelDeployments` | Models to deploy (array) | GPT-5.1 + embeddings |
+
+### Managed Network Isolation Modes
+
+| Mode | Description |
+|------|-------------|
+| **`AllowOnlyApprovedOutbound`** (default) | Most secure — only approved private endpoints and required Azure service tags. No internet access from compute. |
+| `AllowInternetOutbound` | Private endpoints + unrestricted internet egress. Use for dev/test when pip/conda/HuggingFace access is needed. |
 
 ---
 

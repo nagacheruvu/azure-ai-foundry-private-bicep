@@ -84,12 +84,26 @@ az deployment group create \
 ## Key Features
 
 - **Hub-spoke compatible** — uses existing centralized VNet and DNS
+- **AllowOnlyApprovedOutbound** — most restrictive isolation; no internet egress, only approved PE + service tags
 - **Conditional resource creation** — pass existing resource names or create new
 - **Cross-subscription** — PE subnet and DNS zones can be in different subscriptions
 - **All public access disabled** — every resource locked to private endpoints
-- **Managed network isolation** — AI Foundry Hub uses `AllowInternetOutbound` mode
-- **Azure OpenAI** — optional deployment with GPT-4o and embeddings, private endpoint
+- **Azure OpenAI** — optional deployment with GPT-5.1 and embeddings, private endpoint auto-registered as approved outbound
 - **Prerequisites validation** — comprehensive PowerShell script catches misconfigs early
+
+## Managed Network Isolation Modes
+
+| Mode | Outbound Behavior | Use Case |
+|------|-------------------|----------|
+| `AllowOnlyApprovedOutbound` **(default)** | Only approved PEs + required service tags | Production / regulated workloads |
+| `AllowInternetOutbound` | PEs + unrestricted internet | Dev/test or when pip/conda needed |
+
+With `AllowOnlyApprovedOutbound`, the system auto-creates:
+- **Required PE rules**: Storage (blob/file), Key Vault, ACR, Workspace
+- **Required ServiceTag rules**: AAD, AzureML, ARM, AzureMonitor, BatchNodeManagement, MCR, VirtualNetwork, AzureFrontDoor
+- **UserDefined PE rule**: OpenAI account (added by this Bicep)
+
+Set `managedNetworkIsolationMode` in your parameters to switch modes.
 
 ## Requirements
 
