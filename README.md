@@ -1,6 +1,6 @@
-# AI Foundry Private Deployment (Hub-Spoke Model)
+# AI Foundry Private Deployment
 
-Production-ready Bicep modules to deploy Azure AI Foundry with **full private networking** using a hub-spoke topology — existing VNet and Private DNS Zones from a central networking subscription.
+Production-ready Bicep modules to deploy Azure AI Foundry with **full private networking**. Supports flexible topologies — VNet in same or different subscription, DNS zones spread across **multiple subscriptions**. No temporary DNS zone workaround needed.
 
 ## Architecture
 
@@ -78,8 +78,8 @@ The script validates:
 ### 2. Configure Parameters
 
 Edit `main.bicepparam` with your environment values:
-- Central VNet subnet IDs
-- Private DNS Zone resource IDs
+- VNet subnet ID (same or different subscription)
+- Private DNS Zone resource IDs (each can be in a different sub/RG)
 - Existing resource names (or leave empty to create new)
 
 ### 3. Deploy
@@ -105,7 +105,8 @@ az deployment group create \
 
 ## Key Features
 
-- **Hub-spoke compatible** — uses existing centralized VNet and DNS
+- **Flexible topology** — VNet in same or different subscription from AI Foundry
+- **Multi-subscription DNS** — DNS zones can be spread across multiple subscriptions/RGs
 - **AllowOnlyApprovedOutbound** — most restrictive isolation; no internet egress, only approved PE + service tags
 - **Conditional resource creation** — pass existing resource names or create new
 - **Cross-subscription** — PE subnet and DNS zones can be in different subscriptions
@@ -132,8 +133,8 @@ Set `managedNetworkIsolationMode` in your parameters to switch modes.
 - Azure CLI 2.50+
 - Bicep CLI 0.22+
 - Contributor on target subscription
-- Network Contributor on networking subscription (for cross-sub PE creation)
-- Private DNS Zone Contributor on DNS resource group
+- Network Contributor on VNet subscription (if cross-sub)
+- Private DNS Zone Contributor on **each** DNS subscription/RG
 
 ## License
 
