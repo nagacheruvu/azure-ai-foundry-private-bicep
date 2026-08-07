@@ -8,24 +8,25 @@ param location = 'eastus2'
 param environment = 'dev'
 
 // ---------------------------------------------------------------------------
-// Existing VNet/Subnet from central networking subscription
+// Existing VNet/Subnet (same subscription as AI Foundry for KF)
 // Replace with your actual resource IDs
 // ---------------------------------------------------------------------------
-param existingPeSubnetId = '/subscriptions/<NETWORK-SUB-ID>/resourceGroups/<NETWORK-RG>/providers/Microsoft.Network/virtualNetworks/<VNET-NAME>/subnets/<PE-SUBNET-NAME>'
+param existingPeSubnetId = '/subscriptions/<AI-FOUNDRY-SUB-ID>/resourceGroups/<VNET-RG>/providers/Microsoft.Network/virtualNetworks/<VNET-NAME>/subnets/<PE-SUBNET-NAME>'
 param existingComputeSubnetId = ''  // Optional: for compute injection
 
 // ---------------------------------------------------------------------------
-// Existing Private DNS Zone IDs from central subscription
-// Replace with your actual DNS zone resource IDs
+// Existing Private DNS Zone IDs
+// Each zone can be in a DIFFERENT subscription/resource group
+// e.g., storage zones in one sub, AML zones in another
 // ---------------------------------------------------------------------------
-param dnsZoneIdAml = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.api.azureml.ms'
-param dnsZoneIdNotebooks = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.notebooks.azure.net'
-param dnsZoneIdBlob = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net'
-param dnsZoneIdFile = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net'
-param dnsZoneIdKeyVault = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net'
-param dnsZoneIdAcr = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io'
-param dnsZoneIdOpenAi = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com'
-param dnsZoneIdCognitiveServices = '/subscriptions/<DNS-SUB-ID>/resourceGroups/<DNS-RG>/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com'
+param dnsZoneIdAml = '/subscriptions/<DNS-SUB-A>/resourceGroups/<DNS-RG-A>/providers/Microsoft.Network/privateDnsZones/privatelink.api.azureml.ms'
+param dnsZoneIdNotebooks = '/subscriptions/<DNS-SUB-A>/resourceGroups/<DNS-RG-A>/providers/Microsoft.Network/privateDnsZones/privatelink.notebooks.azure.net'
+param dnsZoneIdBlob = '/subscriptions/<DNS-SUB-B>/resourceGroups/<DNS-RG-B>/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net'
+param dnsZoneIdFile = '/subscriptions/<DNS-SUB-B>/resourceGroups/<DNS-RG-B>/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net'
+param dnsZoneIdKeyVault = '/subscriptions/<DNS-SUB-C>/resourceGroups/<DNS-RG-C>/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net'
+param dnsZoneIdAcr = '/subscriptions/<DNS-SUB-B>/resourceGroups/<DNS-RG-B>/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io'
+param dnsZoneIdOpenAi = '/subscriptions/<DNS-SUB-A>/resourceGroups/<DNS-RG-A>/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com'
+param dnsZoneIdCognitiveServices = '/subscriptions/<DNS-SUB-A>/resourceGroups/<DNS-RG-A>/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com'
 
 // ---------------------------------------------------------------------------
 // Existing Supporting Services (leave empty to create new)

@@ -1,7 +1,9 @@
 // ============================================================================
-// AI Foundry - Private Deployment (Hub-Spoke Model)
-// Uses EXISTING VNet + DNS Zones from a central networking subscription
-// Deploys AI Foundry Hub/Project + Private Endpoints into spoke subscription
+// AI Foundry - Private Deployment (Flexible Topology)
+// Supports:
+//   - VNet in same subscription as AI Foundry (KF pattern)
+//   - DNS Zones spread across one or more separate subscriptions
+//   - Existing supporting services in any subscription/RG
 // ============================================================================
 
 targetScope = 'resourceGroup'
@@ -23,7 +25,7 @@ param suffix string
 param environment string = 'dev'
 
 // ---------------------------------------------------------------------------
-// Existing Central Network Parameters (Hub Subscription)
+// Existing VNet/Subnet (can be same or different subscription)
 // ---------------------------------------------------------------------------
 
 @description('Resource ID of the existing subnet for private endpoints')
@@ -33,7 +35,9 @@ param existingPeSubnetId string
 param existingComputeSubnetId string = ''
 
 // ---------------------------------------------------------------------------
-// Existing Private DNS Zone IDs (from central networking subscription)
+// Existing Private DNS Zone IDs
+// Each zone can be in a DIFFERENT subscription/RG — pass full resource IDs
+// e.g., /subscriptions/<SUB-A>/resourceGroups/<RG-1>/providers/Microsoft.Network/privateDnsZones/...
 // ---------------------------------------------------------------------------
 
 @description('Resource ID of privatelink.api.azureml.ms DNS zone')

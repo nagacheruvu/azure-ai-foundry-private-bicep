@@ -5,53 +5,75 @@ Production-ready Bicep modules to deploy Azure AI Foundry with **full private ne
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  Central Networking Subscription                             │
-│  ┌───────────────────┐  ┌─────────────────────────────────┐ │
-│  │  VNet (Hub/Spoke) │  │  Private DNS Zones              │ │
-│  │  ├─ snet-pe       │  │  - privatelink.api.azureml.ms   │ │
-│  │  ├─ snet-compute  │  │  - privatelink.blob.core...     │ │
-│  │  └─ snet-services │  │  - privatelink.openai.azure.com │ │
-│  └───────────────────┘  │  - privatelink.vaultcore...     │ │
-│                          │  - (+ 4 more)                   │ │
-│                          └─────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────┘
-                              │ Private Endpoints
-┌─────────────────────────────────────────────────────────────┐
-│  AI Foundry Subscription (this deployment)                   │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  AI Hub      │  │  AI Project  │  │  Azure OpenAI│      │
-│  │  (+ Hub PE)  │  │  (inherits)  │  │  (+ PE)      │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │  Key Vault   │  │  Storage     │  │  ACR         │      │
-│  │  (+ PE)      │  │  (+ blob/    │  │  (+ PE)      │      │
-│  │              │  │    file PE)  │  │  Premium     │      │
-│  └──────────────┘  └──────────────┘  └──────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│  Subscription A — AI Foundry + VNet                   │
+│  ┌───────────────────┐  ┌──────────────────────────┐ │
+│  │  VNet             │  │  AI Foundry Hub + Project │ │
+│  │  ├─ snet-pe       │  │  Azure OpenAI            │ │
+│  │  ├─ snet-compute  │  │  Key Vault / Storage     │ │
+│  │  └─ snet-services │  │  ACR / App Insights      │ │
+│  └───────────────────┘  └──────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+         ▲ VNet links              ▲ PE DNS Zone Groups
+┌────────┴──────────────────────────┴──────────────────┐
+│  Subscription B, C, ... — Private DNS Zones           │
+│  ┌───────────────────────────────────────────────┐   │
+│  │  privatelink.api.azureml.ms         (Sub B)   │   │
+│  │  privatelink.blob.core.windows.net  (Sub C)   │   │
+│  │  privatelink.vaultcore.azure.net    (Sub B)   │   │
+│  │  privatelink.openai.azure.com       (Sub C)   │   │
+│  │  ... (8 zones, any sub/RG mix)                │   │
+│  └───────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────┘
 ```
+
+DNS zones can be in **one or more separate subscriptions** — each zone 
+is referenced by full resource ID. No temp zone workaround needed.
 
 ## Quick Start
 
 ### 1. Run Prerequisites Check
 
+**DNS zones in multiple subscriptions (recommended for KF):**
+
+```powershell
+$dnsZones = @{
+  aml               = "/subscriptions/SUB-B/resourceGroups/rg-dns-aml/providers/Microsoft.Network/privateDnsZones/privatelink.api.azureml.ms"
+  notebooks         = "/subscriptions/SUB-B/resourceGroups/rg-dns-aml/providers/Microsoft.Network/privateDnsZones/privatelink.notebooks.azure.net"
+  blob              = "/subscriptions/SUB-C/resourceGroups/rg-dns-storage/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+  file              = "/subscriptions/SUB-C/resourceGroups/rg-dns-storage/providers/Microsoft.Network/privateDnsZones/privatelink.file.core.windows.net"
+  keyVault          = "/subscriptions/SUB-B/resourceGroups/rg-dns-kv/providers/Microsoft.Network/privateDnsZones/privatelink.vaultcore.azure.net"
+  acr               = "/subscriptions/SUB-C/resourceGroups/rg-dns-storage/providers/Microsoft.Network/privateDnsZones/privatelink.azurecr.io"
+  openai            = "/subscriptions/SUB-B/resourceGroups/rg-dns-ai/providers/Microsoft.Network/privateDnsZones/privatelink.openai.azure.com"
+  cognitiveServices = "/subscriptions/SUB-B/resourceGroups/rg-dns-ai/providers/Microsoft.Network/privateDnsZones/privatelink.cognitiveservices.azure.com"
+}
+
+.\prereqs-check.ps1 `
+  -PeSubnetId "/subscriptions/<SUB-A>/.../subnets/<PE-SUBNET>" `
+  -DnsZoneIds $dnsZones `
+  -TargetSubscriptionId "<SUB-A>" `
+  -TargetResourceGroup "rg-aifoundry-prod"
+```
+
+**All DNS in one sub/RG (shorthand):**
+
 ```powershell
 .\prereqs-check.ps1 `
-  -PeSubnetId "/subscriptions/<NET-SUB>/resourceGroups/<NET-RG>/providers/Microsoft.Network/virtualNetworks/<VNET>/subnets/<PE-SUBNET>" `
-  -DnsSubscriptionId "<DNS-SUB-ID>" `
+  -PeSubnetId "/subscriptions/<SUB-A>/.../subnets/<PE-SUBNET>" `
+  -DnsSubscriptionId "<DNS-SUB>" `
   -DnsResourceGroup "<DNS-RG>" `
-  -TargetSubscriptionId "<AI-SUB-ID>" `
+  -TargetSubscriptionId "<SUB-A>" `
   -TargetResourceGroup "rg-aifoundry-prod"
 ```
 
 The script validates:
 1. Azure CLI & Bicep installed
-2. Subscription access (target + networking)
+2. Subscription access (target + all DNS subscriptions)
 3. Resource provider registration
 4. VNet/Subnet config (PE policies, IP capacity)
-5. All 8 Private DNS Zones exist with VNet links
+5. All 8 Private DNS Zones exist with VNet links (across any number of subs)
 6. Existing resources (if specified) are valid
-7. RBAC permissions for cross-sub PE creation
+7. RBAC permissions per DNS subscription/RG
 
 ### 2. Configure Parameters
 

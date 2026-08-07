@@ -1,15 +1,15 @@
 <#
 .SYNOPSIS
-    Pre-requisites check for AI Foundry Private Deployment (Hub-Spoke Model)
+    Pre-requisites check for AI Foundry Private Deployment
 .DESCRIPTION
     Validates that all required resources exist and are properly configured
-    in the central networking subscription before deploying AI Foundry.
+    before deploying AI Foundry with private networking.
+    Supports DNS zones spread across multiple subscriptions/resource groups.
 .PARAMETER PeSubnetId
     Resource ID of the private endpoints subnet
-.PARAMETER DnsSubscriptionId
-    Subscription ID where Private DNS Zones live
-.PARAMETER DnsResourceGroup
-    Resource group name containing Private DNS Zones
+.PARAMETER DnsZoneIds
+    Hashtable of DNS zone resource IDs. Keys: aml, notebooks, blob, file, keyVault, acr, openai, cognitiveServices
+    Each zone can be in a different subscription/resource group.
 .PARAMETER TargetSubscriptionId
     Subscription ID where AI Foundry will be deployed
 .PARAMETER TargetResourceGroup
@@ -17,18 +17,31 @@
 .PARAMETER Location
     Azure region for deployment
 .EXAMPLE
-    .\prereqs-check.ps1 -PeSubnetId "/subscriptions/.../subnets/snet-pe" -DnsSubscriptionId "abc-123" -DnsResourceGroup "rg-dns-central" -TargetSubscriptionId "def-456" -TargetResourceGroup "rg-aifoundry-prod"
+    # All DNS in one sub/RG:
+    $dns = @{
+      aml  = "/subscriptions/SUB-B/resourceGroups/rg-dns/providers/Microsoft.Network/privateDnsZones/privatelink.api.azureml.ms"
+      blob = "/subscriptions/SUB-C/resourceGroups/rg-dns-storage/providers/Microsoft.Network/privateDnsZones/privatelink.blob.core.windows.net"
+      # ... etc
+    }
+    .\prereqs-check.ps1 -PeSubnetId "/subscriptions/SUB-A/.../subnets/snet-pe" -DnsZoneIds $dns -TargetSubscriptionId "SUB-A" -TargetResourceGroup "rg-aifoundry"
+
+.EXAMPLE
+    # Legacy mode: single DNS subscription/RG (auto-builds zone IDs)
+    .\prereqs-check.ps1 -PeSubnetId "..." -DnsSubscriptionId "SUB-B" -DnsResourceGroup "rg-dns" -TargetSubscriptionId "SUB-A" -TargetResourceGroup "rg-aifoundry"
 #>
 
 param(
     [Parameter(Mandatory=$true)]
     [string]$PeSubnetId,
 
-    [Parameter(Mandatory=$true)]
-    [string]$DnsSubscriptionId,
+    [Parameter(Mandatory=$false)]
+    [hashtable]$DnsZoneIds = @{},
 
-    [Parameter(Mandatory=$true)]
-    [string]$DnsResourceGroup,
+    [Parameter(Mandatory=$false)]
+    [string]$DnsSubscriptionId = "",
+
+    [Parameter(Mandatory=$false)]
+    [string]$DnsResourceGroup = "",
 
     [Parameter(Mandatory=$true)]
     [string]$TargetSubscriptionId,
@@ -51,6 +64,35 @@ param(
     [Parameter(Mandatory=$false)]
     [string]$ExistingAcrName = ""
 )
+
+# ---------------------------------------------------------------------------
+# Build DNS zone ID map
+# If DnsZoneIds hashtable is provided, use it directly.
+# If DnsSubscriptionId + DnsResourceGroup are provided, build the map.
+# ---------------------------------------------------------------------------
+$requiredZoneKeys = @{
+    'aml'               = 'privatelink.api.azureml.ms'
+    'notebooks'         = 'privatelink.notebooks.azure.net'
+    'blob'              = 'privatelink.blob.core.windows.net'
+    'file'              = 'privatelink.file.core.windows.net'
+    'keyVault'          = 'privatelink.vaultcore.azure.net'
+    'acr'               = 'privatelink.azurecr.io'
+    'openai'            = 'privatelink.openai.azure.com'
+    'cognitiveServices' = 'privatelink.cognitiveservices.azure.com'
+}
+
+if ($DnsZoneIds.Count -eq 0 -and $DnsSubscriptionId -and $DnsResourceGroup) {
+    # Legacy mode: build from single sub/RG
+    foreach ($key in $requiredZoneKeys.Keys) {
+        $zoneName = $requiredZoneKeys[$key]
+        $DnsZoneIds[$key] = "/subscriptions/$DnsSubscriptionId/resourceGroups/$DnsResourceGroup/providers/Microsoft.Network/privateDnsZones/$zoneName"
+    }
+}
+
+if ($DnsZoneIds.Count -eq 0) {
+    Write-Host "ERROR: Provide either -DnsZoneIds hashtable or -DnsSubscriptionId + -DnsResourceGroup" -ForegroundColor Red
+    exit 1
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -149,12 +191,25 @@ if ($targetSub) {
     Write-Check "Target subscription accessible" "FAIL" "Cannot access subscription $TargetSubscriptionId"
 }
 
-# Check DNS/networking subscription access
-$dnsSub = az account show --subscription $DnsSubscriptionId --query "name" -o tsv 2>$null
-if ($dnsSub) {
-    Write-Check "DNS/Network subscription accessible" "PASS" "$dnsSub ($DnsSubscriptionId)"
-} else {
-    Write-Check "DNS/Network subscription accessible" "FAIL" "Cannot access subscription $DnsSubscriptionId"
+# Collect unique DNS subscription IDs from zone resource IDs
+$dnsSubscriptions = @{}
+foreach ($key in $DnsZoneIds.Keys) {
+    $zoneId = $DnsZoneIds[$key]
+    $parts = $zoneId -split '/'
+    if ($parts.Count -ge 3) {
+        $subId = $parts[2]
+        $dnsSubscriptions[$subId] = $true
+    }
+}
+
+foreach ($subId in $dnsSubscriptions.Keys) {
+    if ($subId -eq $TargetSubscriptionId) { continue }
+    $dnsSub = az account show --subscription $subId --query "name" -o tsv 2>$null
+    if ($dnsSub) {
+        Write-Check "DNS subscription accessible" "PASS" "$dnsSub ($subId)"
+    } else {
+        Write-Check "DNS subscription accessible" "FAIL" "Cannot access DNS subscription $subId"
+    }
 }
 
 Write-Host ""
@@ -233,40 +288,43 @@ if ($ComputeSubnetId) {
 Write-Host ""
 
 # ---------------------------------------------------------------------------
-# 5. Private DNS Zones
+# 5. Private DNS Zones (may span multiple subscriptions)
 # ---------------------------------------------------------------------------
-Write-Host "[5/7] Private DNS Zones (central subscription)" -ForegroundColor White
+Write-Host "[5/7] Private DNS Zones" -ForegroundColor White
 Write-Host "------------------------------------------------------------"
 
-$requiredZones = @(
-    'privatelink.api.azureml.ms',
-    'privatelink.notebooks.azure.net',
-    'privatelink.blob.core.windows.net',
-    'privatelink.file.core.windows.net',
-    'privatelink.vaultcore.azure.net',
-    'privatelink.azurecr.io',
-    'privatelink.openai.azure.com',
-    'privatelink.cognitiveservices.azure.com'
-)
-
 $dnsZonesFound = @{}
-$dnsZonesList = az network private-dns zone list --subscription $DnsSubscriptionId --resource-group $DnsResourceGroup --query "[].name" -o json 2>$null | ConvertFrom-Json
+$vnetId = ($PeSubnetId -split '/subnets/')[0]
 
-foreach ($zone in $requiredZones) {
-    if ($dnsZonesList -contains $zone) {
-        Write-Check "$zone" "PASS"
-        $dnsZonesFound[$zone] = $true
-        
+foreach ($key in $requiredZoneKeys.Keys) {
+    $expectedZoneName = $requiredZoneKeys[$key]
+    
+    if (-not $DnsZoneIds.ContainsKey($key)) {
+        Write-Check "$expectedZoneName" "FAIL" "No zone ID provided for key '$key'"
+        continue
+    }
+
+    $zoneResourceId = $DnsZoneIds[$key]
+    $zoneParts = $zoneResourceId -split '/'
+    $zoneSubId = $zoneParts[2]
+    $zoneRg = $zoneParts[4]
+    $zoneName = $zoneParts[-1]
+
+    # Verify the zone exists
+    $zone = az network private-dns zone show --name $zoneName --resource-group $zoneRg --subscription $zoneSubId --query "name" -o tsv 2>$null
+    if ($zone) {
+        Write-Check "$zoneName" "PASS" "Sub: $zoneSubId / RG: $zoneRg"
+        $dnsZonesFound[$key] = $true
+
         # Check VNet link exists
-        $vnetId = ($PeSubnetId -split '/subnets/')[0]
-        $links = az network private-dns link vnet list --zone-name $zone --resource-group $DnsResourceGroup --subscription $DnsSubscriptionId --query "[?virtualNetwork.id=='$vnetId'].name" -o json 2>$null | ConvertFrom-Json
+        $links = az network private-dns link vnet list --zone-name $zoneName --resource-group $zoneRg --subscription $zoneSubId --query "[?virtualNetwork.id=='$vnetId'].name" -o json 2>$null | ConvertFrom-Json
         if ($links -and $links.Count -gt 0) {
-            Write-Check "  VNet link for $zone" "PASS" "Linked to VNet"
+            Write-Check "  VNet link" "PASS" "Linked to VNet"
         } else {
-            Write-Check "  VNet link for $zone" "WARN" "No VNet link found - PE DNS resolution may fail"
+            Write-Check "  VNet link" "WARN" "No VNet link found - PE DNS resolution may fail. Create link in $zoneRg"
         }
     } else {
-        Write-Check "$zone" "FAIL" "Not found in $DnsResourceGroup"
+        Write-Check "$zoneName" "FAIL" "Not found in Sub: $zoneSubId / RG: $zoneRg"
     }
 }
 
@@ -357,12 +415,24 @@ if ($vnetSubId -ne $TargetSubscriptionId) {
     }
 }
 
-# Check Private DNS Zone Contributor
-$dnsRoles = az role assignment list --assignee $currentUser.objectId --subscription $DnsSubscriptionId --resource-group $DnsResourceGroup --query "[?contains(roleDefinitionName, 'DNS') || roleDefinitionName=='Contributor' || roleDefinitionName=='Owner'].roleDefinitionName" -o json 2>$null | ConvertFrom-Json
-if ($dnsRoles -and $dnsRoles.Count -gt 0) {
-    Write-Check "DNS Zone Contributor on DNS RG" "PASS" "$($dnsRoles[0])"
-} else {
-    Write-Check "DNS Zone Contributor on DNS RG" "WARN" "May need 'Private DNS Zone Contributor' for A-record auto-registration"
+# Check Private DNS Zone Contributor on each DNS subscription/RG
+$checkedDnsScopes = @{}
+foreach ($key in $DnsZoneIds.Keys) {
+    $zoneId = $DnsZoneIds[$key]
+    $zoneParts = $zoneId -split '/'
+    $zoneSubId = $zoneParts[2]
+    $zoneRg = $zoneParts[4]
+    $scopeKey = "$zoneSubId/$zoneRg"
+    
+    if ($checkedDnsScopes.ContainsKey($scopeKey)) { continue }
+    $checkedDnsScopes[$scopeKey] = $true
+    
+    $dnsRoles = az role assignment list --assignee $currentUser.objectId --subscription $zoneSubId --resource-group $zoneRg --query "[?contains(roleDefinitionName, 'DNS') || roleDefinitionName=='Contributor' || roleDefinitionName=='Owner'].roleDefinitionName" -o json 2>$null | ConvertFrom-Json
+    if ($dnsRoles -and $dnsRoles.Count -gt 0) {
+        Write-Check "DNS Contributor on $zoneRg" "PASS" "$($dnsRoles[0])"
+    } else {
+        Write-Check "DNS Contributor on $zoneRg" "WARN" "May need 'Private DNS Zone Contributor' on $zoneRg (sub: $zoneSubId)"
+    }
 }
 
 Write-Host ""
@@ -400,13 +470,11 @@ Write-Host "------------------------------------------------------------"
 Write-Host " DNS Zone Resource IDs (for bicepparam file)" -ForegroundColor Cyan
 Write-Host "------------------------------------------------------------"
 
-if ($dnsZonesList) {
-    foreach ($zone in $requiredZones) {
-        if ($dnsZonesFound[$zone]) {
-            $zoneId = "/subscriptions/$DnsSubscriptionId/resourceGroups/$DnsResourceGroup/providers/Microsoft.Network/privateDnsZones/$zone"
-            Write-Host "  $zone" -ForegroundColor DarkGray
-            Write-Host "    $zoneId"
-        }
+foreach ($key in $requiredZoneKeys.Keys) {
+    if ($DnsZoneIds.ContainsKey($key) -and $dnsZonesFound.ContainsKey($key)) {
+        $zoneName = $requiredZoneKeys[$key]
+        Write-Host "  $key ($zoneName)" -ForegroundColor DarkGray
+        Write-Host "    $($DnsZoneIds[$key])"
     }
 }
 Write-Host ""
