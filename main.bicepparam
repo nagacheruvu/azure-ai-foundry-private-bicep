@@ -1,11 +1,27 @@
 using './main.bicep'
 
 // ---------------------------------------------------------------------------
-// Deployment suffix & environment
+// CAF Naming (defaults generated automatically)
+// Pattern: {abbreviation}-{workload}-{env}-{region}-{instance}
 // ---------------------------------------------------------------------------
-param suffix = 'kfpoc01'
+param workloadName = 'kf'           // Workload short name
+param environment = 'dev'           // dev | test | prod
+param regionShortName = 'eus2'      // Region abbreviation
+param instance = '001'              // Instance number
 param location = 'eastus2'
-param environment = 'dev'
+
+// ---------------------------------------------------------------------------
+// Name Overrides (uncomment to override CAF defaults)
+// Default names generated: hub-kf-dev-eus2-001, oai-kf-dev-eus2-001, etc.
+// ---------------------------------------------------------------------------
+// param hubNameOverride = 'my-custom-hub-name'
+// param projectNameOverride = 'my-custom-project-name'
+// param openAiNameOverride = 'my-custom-oai-name'
+// param keyVaultNameOverride = 'my-custom-kv'
+// param storageNameOverride = 'mycustomst'
+// param acrNameOverride = 'mycustomcr'
+// param logAnalyticsNameOverride = 'my-custom-log'
+// param appInsightsNameOverride = 'my-custom-appi'
 
 // ---------------------------------------------------------------------------
 // Existing VNet/Subnet (same subscription as AI Foundry for KF)

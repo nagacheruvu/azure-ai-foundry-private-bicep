@@ -1,22 +1,23 @@
 // ============================================================================
 // Module: azure-openai.bicep
-// Azure OpenAI (Cognitive Services) with private endpoint
+// Azure OpenAI using Azure Verified Module (AVM)
+// CAF naming: oai-{workload}-{env}-{region}-{instance}
 // ============================================================================
 
 @description('Azure region')
 param location string
-
-@description('Resource name suffix')
-param suffix string
-
-@description('Environment label')
-param environment string = 'dev'
 
 @description('Subnet ID for private endpoints')
 param peSubnetId string
 
 @description('DNS Zone IDs for private endpoint registration')
 param dnsZoneIds object
+
+@description('Azure OpenAI name (CAF: oai-{workload}-{env}-{region}-{instance})')
+param openAiName string
+
+@description('Private Endpoint name suffix')
+param pepSuffix string
 
 @description('Azure OpenAI SKU')
 @allowed(['S0'])
@@ -38,21 +39,18 @@ param modelDeployments array = [
   }
 ]
 
-var accountName = 'oai-${suffix}-${environment}'
-
 // ---------------------------------------------------------------------------
-// Azure OpenAI (Cognitive Services Account)
+// Azure OpenAI (AVM: cognitive-services/account)
 // ---------------------------------------------------------------------------
-resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview' = {
-  name: accountName
-  location: location
-  kind: 'OpenAI'
-  sku: { name: sku }
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    customSubDomainName: accountName
+module openAiAccount 'br/public:avm/res/cognitive-services/account:0.18.0' = {
+  name: 'deploy-oai'
+  params: {
+    name: openAiName
+    location: location
+    kind: 'OpenAI'
+    sku: sku
+    managedIdentities: { systemAssigned: true }
+    customSubDomainName: openAiName
     publicNetworkAccess: 'Disabled'
     networkAcls: {
       defaultAction: 'Deny'
@@ -60,61 +58,28 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2024-04-01-preview'
       virtualNetworkRules: []
     }
     disableLocalAuth: false
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Model Deployments
-// ---------------------------------------------------------------------------
-@batchSize(1)
-resource deployments 'Microsoft.CognitiveServices/accounts/deployments@2024-04-01-preview' = [for deployment in modelDeployments: {
-  parent: openAiAccount
-  name: deployment.name
-  sku: {
-    name: 'Standard'
-    capacity: deployment.capacity
-  }
-  properties: {
-    model: {
-      format: 'OpenAI'
-      name: deployment.model
-      version: deployment.version
-    }
-  }
-}]
-
-// ---------------------------------------------------------------------------
-// Private Endpoint
-// ---------------------------------------------------------------------------
-resource openAiPe 'Microsoft.Network/privateEndpoints@2024-01-01' = {
-  name: 'pe-oai-${suffix}-${environment}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
+    deployments: [for deployment in modelDeployments: {
+      name: deployment.name
+      model: {
+        format: 'OpenAI'
+        name: deployment.model
+        version: deployment.version
+      }
+      sku: {
+        name: 'Standard'
+        capacity: deployment.capacity
+      }
+    }]
+    privateEndpoints: [
       {
-        name: 'pe-oai-${suffix}-${environment}'
-        properties: {
-          privateLinkServiceId: openAiAccount.id
-          groupIds: ['account']
+        name: 'pep-oai${pepSuffix}'
+        subnetResourceId: peSubnetId
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.openai }
+            { privateDnsZoneResourceId: dnsZoneIds.cognitiveServices }
+          ]
         }
-      }
-    ]
-  }
-}
-
-resource openAiPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = {
-  parent: openAiPe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'openai'
-        properties: { privateDnsZoneId: dnsZoneIds.openai }
-      }
-      {
-        name: 'cognitiveservices'
-        properties: { privateDnsZoneId: dnsZoneIds.cognitiveServices }
       }
     ]
   }
@@ -123,7 +88,7 @@ resource openAiPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGrou
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
-output openAiAccountId string = openAiAccount.id
-output openAiAccountName string = openAiAccount.name
-output openAiEndpoint string = openAiAccount.properties.endpoint
-output openAiPrincipalId string = openAiAccount.identity.principalId
+output openAiAccountId string = openAiAccount.outputs.resourceId
+output openAiAccountName string = openAiAccount.outputs.name
+output openAiEndpoint string = openAiAccount.outputs.endpoint
+output openAiPrincipalId string = openAiAccount.outputs.systemAssignedMIPrincipalId

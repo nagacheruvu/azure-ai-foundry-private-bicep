@@ -1,16 +1,11 @@
 // ============================================================================
 // Module: ai-foundry.bicep
-// AI Foundry Hub + Project with private endpoint (Hub only)
+// AI Foundry Hub + Project using Azure Verified Modules (AVM)
+// CAF naming: hub-{workload}, proj-{workload}
 // ============================================================================
 
 @description('Azure region')
 param location string
-
-@description('Resource name suffix')
-param suffix string
-
-@description('Environment label')
-param environment string = 'dev'
 
 @description('Subnet ID for private endpoints')
 param peSubnetId string
@@ -30,7 +25,7 @@ param containerRegistryId string
 @description('Application Insights resource ID (optional)')
 param appInsightsId string = ''
 
-@description('Log Analytics Workspace resource ID (optional, used if appInsights not provided)')
+@description('Log Analytics Workspace resource ID (optional)')
 param logAnalyticsId string = ''
 
 @description('DNS Zone IDs for private endpoint registration')
@@ -43,12 +38,19 @@ param managedNetworkIsolationMode string = 'AllowOnlyApprovedOutbound'
 @description('Azure OpenAI account resource ID (for managed network outbound PE rule)')
 param openAiAccountId string = ''
 
-var hubName = 'aihub-${suffix}-${environment}'
-var projectName = 'aiproj-${suffix}-${environment}'
+// ---------------------------------------------------------------------------
+// CAF resource names (passed from naming module or overridden)
+// ---------------------------------------------------------------------------
+@description('AI Foundry Hub name (CAF: hub-{workload}-{env}-{region}-{instance})')
+param hubName string
 
-// Outbound rules for managed network
-// System auto-creates required PE rules for storage, KV, ACR, workspace
-// We add the OpenAI PE rule when an OpenAI account is provided
+@description('AI Foundry Project name (CAF: proj-{workload}-{env}-{region}-{instance})')
+param projectName string
+
+@description('Private Endpoint name suffix')
+param pepSuffix string
+
+// Outbound rules for managed network (OpenAI PE if provided)
 var outboundRulesWithOpenAi = {
   'openai-pe': {
     type: 'PrivateEndpoint'
@@ -62,90 +64,63 @@ var outboundRulesWithOpenAi = {
 }
 
 // ---------------------------------------------------------------------------
-// AI Foundry Hub (workspace kind: Hub)
+// AI Foundry Hub (AVM: machine-learning-services/workspace, kind: Hub)
 // ---------------------------------------------------------------------------
-resource aiHub 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
-  name: hubName
-  location: location
-  kind: 'Hub'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    friendlyName: 'AI Foundry Hub - ${suffix} (${environment})'
-    description: 'AI Foundry Hub with private networking - hub-spoke model'
-    keyVault: keyVaultId
-    storageAccount: storageAccountId
-    containerRegistry: containerRegistryId
-    applicationInsights: !empty(appInsightsId) ? appInsightsId : null
+module aiHub 'br/public:avm/res/machine-learning-services/workspace:0.14.0' = {
+  name: 'deploy-hub'
+  params: {
+    name: hubName
+    location: location
+    sku: 'Basic'
+    kind: 'Hub'
+    managedIdentities: { systemAssigned: true }
+    associatedKeyVaultResourceId: keyVaultId
+    associatedStorageAccountResourceId: storageAccountId
+    associatedContainerRegistryResourceId: containerRegistryId
+    associatedApplicationInsightsResourceId: !empty(appInsightsId) ? appInsightsId : null
+    description: 'AI Foundry Hub with private networking'
     publicNetworkAccess: 'Disabled'
-    managedNetwork: {
+    managedNetworkSettings: {
       isolationMode: managedNetworkIsolationMode
       outboundRules: !empty(openAiAccountId) ? outboundRulesWithOpenAi : {}
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// AI Foundry Project (workspace kind: Project)
-// ---------------------------------------------------------------------------
-resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
-  name: projectName
-  location: location
-  kind: 'Project'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    friendlyName: 'AI Foundry Project - ${suffix} (${environment})'
-    description: 'AI Foundry Project - inherits networking from Hub'
-    hubResourceId: aiHub.id
-    publicNetworkAccess: 'Disabled'
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Private Endpoint for AI Foundry Hub (Projects inherit from Hub)
-// ---------------------------------------------------------------------------
-resource hubPe 'Microsoft.Network/privateEndpoints@2024-01-01' = {
-  name: 'pe-aihub-${suffix}-${environment}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
+    privateEndpoints: [
       {
-        name: 'pe-aihub-${suffix}-${environment}'
-        properties: {
-          privateLinkServiceId: aiHub.id
-          groupIds: ['amlworkspace']
+        name: 'pep-hub${pepSuffix}'
+        subnetResourceId: peSubnetId
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.aml }
+            { privateDnsZoneResourceId: dnsZoneIds.notebooks }
+          ]
         }
       }
     ]
   }
 }
 
-resource hubPeDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = {
-  parent: hubPe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      {
-        name: 'aml'
-        properties: { privateDnsZoneId: dnsZoneIds.aml }
-      }
-      {
-        name: 'notebooks'
-        properties: { privateDnsZoneId: dnsZoneIds.notebooks }
-      }
-    ]
+// ---------------------------------------------------------------------------
+// AI Foundry Project (AVM: machine-learning-services/workspace, kind: Project)
+// ---------------------------------------------------------------------------
+module aiProject 'br/public:avm/res/machine-learning-services/workspace:0.14.0' = {
+  name: 'deploy-proj'
+  params: {
+    name: projectName
+    location: location
+    sku: 'Basic'
+    kind: 'Project'
+    managedIdentities: { systemAssigned: true }
+    hubResourceId: aiHub.outputs.resourceId
+    description: 'AI Foundry Project - inherits networking from Hub'
+    publicNetworkAccess: 'Disabled'
   }
 }
 
 // NOTE: Projects inherit networking from the Hub — no separate PE needed
 
-output hubId string = aiHub.id
-output hubName string = aiHub.name
-output hubPrincipalId string = aiHub.identity.principalId
-output projectId string = aiProject.id
-output projectName string = aiProject.name
-output projectPrincipalId string = aiProject.identity.principalId
+output hubId string = aiHub.outputs.resourceId
+output hubName string = aiHub.outputs.name
+output hubPrincipalId string = aiHub.outputs.systemAssignedMIPrincipalId
+output projectId string = aiProject.outputs.resourceId
+output projectName string = aiProject.outputs.name
+output projectPrincipalId string = aiProject.outputs.systemAssignedMIPrincipalId

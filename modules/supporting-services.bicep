@@ -1,13 +1,11 @@
 // ============================================================================
 // Module: supporting-services.bicep
-// Key Vault, Storage, ACR, App Insights — conditionally created with PEs
+// Key Vault, Storage, ACR, App Insights — using Azure Verified Modules (AVM)
+// CAF naming convention with override capability
 // ============================================================================
 
 @description('Azure region')
 param location string
-
-@description('Resource name suffix (must be globally unique for storage)')
-param suffix string
 
 @description('Subnet ID for private endpoints')
 param peSubnetId string
@@ -28,14 +26,34 @@ param createAcr bool = true
 param createLogAnalytics bool = true
 
 // ---------------------------------------------------------------------------
-// Key Vault
+// CAF resource names (passed from naming module or overridden)
 // ---------------------------------------------------------------------------
-resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (createKeyVault) {
-  name: 'kv-aif-${suffix}'
-  location: location
-  properties: {
-    sku: { family: 'A', name: 'standard' }
-    tenantId: subscription().tenantId
+@description('Key Vault name (CAF: kv-{workload}-{env}-{region}-{instance})')
+param keyVaultName string
+
+@description('Storage Account name (CAF: st{workload}{env}{region}{instance})')
+param storageName string
+
+@description('Container Registry name (CAF: cr{workload}{env}{region}{instance})')
+param acrName string
+
+@description('Log Analytics Workspace name (CAF: log-{workload}-{env}-{region}-{instance})')
+param logAnalyticsName string
+
+@description('Application Insights name (CAF: appi-{workload}-{env}-{region}-{instance})')
+param appInsightsName string
+
+@description('Private Endpoint name suffix (CAF: pep-{service}-{suffix})')
+param pepSuffix string
+
+// ---------------------------------------------------------------------------
+// Key Vault (AVM)
+// ---------------------------------------------------------------------------
+module keyVault 'br/public:avm/res/key-vault/vault:0.14.0' = if (createKeyVault) {
+  name: 'deploy-kv'
+  params: {
+    name: keyVaultName
+    location: location
     enableRbacAuthorization: true
     enableSoftDelete: true
     publicNetworkAccess: 'Disabled'
@@ -43,45 +61,30 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = if (createKeyVault) {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
     }
-  }
-}
-
-resource kvPe 'Microsoft.Network/privateEndpoints@2024-01-01' = if (createKeyVault) {
-  name: 'pe-kv-${suffix}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
+    privateEndpoints: [
       {
-        name: 'pe-kv-${suffix}'
-        properties: {
-          privateLinkServiceId: keyVault.id
-          groupIds: ['vault']
+        name: 'pep-kv${pepSuffix}'
+        subnetResourceId: peSubnetId
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.keyVault }
+          ]
         }
       }
     ]
   }
 }
 
-resource kvPeDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = if (createKeyVault) {
-  parent: kvPe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      { name: 'keyvault', properties: { privateDnsZoneId: dnsZoneIds.keyVault } }
-    ]
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Storage Account
+// Storage Account (AVM)
 // ---------------------------------------------------------------------------
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (createStorage) {
-  name: 'staif${suffix}'
-  location: location
-  kind: 'StorageV2'
-  sku: { name: 'Standard_LRS' }
-  properties: {
+module storageAccount 'br/public:avm/res/storage/storage-account:0.33.0' = if (createStorage) {
+  name: 'deploy-st'
+  params: {
+    name: storageName
+    location: location
+    kind: 'StorageV2'
+    skuName: 'Standard_LRS'
     allowSharedKeyAccess: false
     publicNetworkAccess: 'Disabled'
     networkAcls: {
@@ -89,134 +92,88 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = if (cre
       bypass: 'AzureServices'
     }
     minimumTlsVersion: 'TLS1_2'
-    supportsHttpsTrafficOnly: true
-  }
-}
-
-resource stBlobPe 'Microsoft.Network/privateEndpoints@2024-01-01' = if (createStorage) {
-  name: 'pe-st-blob-${suffix}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
+    privateEndpoints: [
       {
-        name: 'pe-st-blob-${suffix}'
-        properties: {
-          privateLinkServiceId: storageAccount.id
-          groupIds: ['blob']
+        name: 'pep-st-blob${pepSuffix}'
+        subnetResourceId: peSubnetId
+        service: 'blob'
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.blob }
+          ]
+        }
+      }
+      {
+        name: 'pep-st-file${pepSuffix}'
+        subnetResourceId: peSubnetId
+        service: 'file'
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.file }
+          ]
         }
       }
     ]
   }
 }
 
-resource stBlobPeDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = if (createStorage) {
-  parent: stBlobPe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      { name: 'blob', properties: { privateDnsZoneId: dnsZoneIds.blob } }
-    ]
-  }
-}
-
-resource stFilePe 'Microsoft.Network/privateEndpoints@2024-01-01' = if (createStorage) {
-  name: 'pe-st-file-${suffix}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
-      {
-        name: 'pe-st-file-${suffix}'
-        properties: {
-          privateLinkServiceId: storageAccount.id
-          groupIds: ['file']
-        }
-      }
-    ]
-  }
-}
-
-resource stFilePeDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = if (createStorage) {
-  parent: stFilePe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      { name: 'file', properties: { privateDnsZoneId: dnsZoneIds.file } }
-    ]
-  }
-}
-
 // ---------------------------------------------------------------------------
-// Container Registry
+// Container Registry (AVM)
 // ---------------------------------------------------------------------------
-resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = if (createAcr) {
-  name: 'craif${suffix}'
-  location: location
-  sku: { name: 'Premium' }
-  properties: {
-    adminUserEnabled: false
+module acr 'br/public:avm/res/container-registry/registry:0.12.1' = if (createAcr) {
+  name: 'deploy-cr'
+  params: {
+    name: acrName
+    location: location
+    acrSku: 'Premium'
+    acrAdminUserEnabled: false
     publicNetworkAccess: 'Disabled'
     networkRuleBypassOptions: 'AzureServices'
-  }
-}
-
-resource acrPe 'Microsoft.Network/privateEndpoints@2024-01-01' = if (createAcr) {
-  name: 'pe-acr-${suffix}'
-  location: location
-  properties: {
-    subnet: { id: peSubnetId }
-    privateLinkServiceConnections: [
+    privateEndpoints: [
       {
-        name: 'pe-acr-${suffix}'
-        properties: {
-          privateLinkServiceId: acr.id
-          groupIds: ['registry']
+        name: 'pep-cr${pepSuffix}'
+        subnetResourceId: peSubnetId
+        privateDnsZoneGroup: {
+          privateDnsZoneGroupConfigs: [
+            { privateDnsZoneResourceId: dnsZoneIds.acr }
+          ]
         }
       }
     ]
   }
 }
 
-resource acrPeDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2024-01-01' = if (createAcr) {
-  parent: acrPe
-  name: 'default'
-  properties: {
-    privateDnsZoneConfigs: [
-      { name: 'acr', properties: { privateDnsZoneId: dnsZoneIds.acr } }
-    ]
+// ---------------------------------------------------------------------------
+// Log Analytics + Application Insights (AVM)
+// ---------------------------------------------------------------------------
+module logAnalytics 'br/public:avm/res/operational-insights/workspace:0.16.1' = if (createLogAnalytics) {
+  name: 'deploy-log'
+  params: {
+    name: logAnalyticsName
+    location: location
+    skuName: 'PerGB2018'
+    dataRetention: 30
   }
 }
 
-// ---------------------------------------------------------------------------
-// Application Insights + Log Analytics
-// ---------------------------------------------------------------------------
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (createLogAnalytics) {
-  name: 'law-aif-${suffix}'
-  location: location
-  properties: {
-    sku: { name: 'PerGB2018' }
-    retentionInDays: 30
-  }
-}
-
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (createLogAnalytics) {
-  name: 'appi-aif-${suffix}'
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    WorkspaceResourceId: logAnalytics.id
+module appInsights 'br/public:avm/res/insights/component:0.8.0' = if (createLogAnalytics) {
+  name: 'deploy-appi'
+  params: {
+    name: appInsightsName
+    location: location
+    kind: 'web'
+    applicationType: 'web'
+    workspaceResourceId: logAnalytics.outputs.resourceId
   }
 }
 
 // ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
-output keyVaultId string = createKeyVault ? keyVault.id : ''
-output storageAccountId string = createStorage ? storageAccount.id : ''
-output containerRegistryId string = createAcr ? acr.id : ''
-output appInsightsId string = createLogAnalytics ? appInsights.id : ''
-output keyVaultName string = createKeyVault ? keyVault.name : ''
-output storageAccountName string = createStorage ? storageAccount.name : ''
-output acrName string = createAcr ? acr.name : ''
+output keyVaultId string = createKeyVault ? keyVault.outputs.resourceId : ''
+output storageAccountId string = createStorage ? storageAccount.outputs.resourceId : ''
+output containerRegistryId string = createAcr ? acr.outputs.resourceId : ''
+output appInsightsId string = createLogAnalytics ? appInsights.outputs.resourceId : ''
+output keyVaultNameOut string = createKeyVault ? keyVault.outputs.name : ''
+output storageAccountNameOut string = createStorage ? storageAccount.outputs.name : ''
+output acrNameOut string = createAcr ? acr.outputs.name : ''

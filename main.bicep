@@ -15,14 +15,70 @@ targetScope = 'resourceGroup'
 @description('Azure region for all resources')
 param location string = resourceGroup().location
 
-@description('Short suffix for resource naming (lowercase, no special chars, max 8)')
-@minLength(3)
-@maxLength(8)
-param suffix string
+@description('Workload or project short name for CAF naming (e.g., "kf", "contoso")')
+@minLength(2)
+@maxLength(10)
+param workloadName string
 
 @description('Environment (dev, test, prod)')
 @allowed(['dev', 'test', 'prod'])
 param environment string = 'dev'
+
+@description('Azure region short name for CAF naming (e.g., "eus2" for eastus2)')
+param regionShortName string = 'eus2'
+
+@description('Instance number for uniqueness')
+param instance string = '001'
+
+// ---------------------------------------------------------------------------
+// Name Overrides (leave empty to use CAF defaults)
+// ---------------------------------------------------------------------------
+
+@description('Override: AI Foundry Hub name (default CAF: hub-{workload}-{env}-{region}-{instance})')
+param hubNameOverride string = ''
+
+@description('Override: AI Foundry Project name (default CAF: proj-{workload}-{env}-{region}-{instance})')
+param projectNameOverride string = ''
+
+@description('Override: Azure OpenAI name (default CAF: oai-{workload}-{env}-{region}-{instance})')
+param openAiNameOverride string = ''
+
+@description('Override: Key Vault name (default CAF: kv-{workload}-{env}-{region}-{instance})')
+param keyVaultNameOverride string = ''
+
+@description('Override: Storage Account name (default CAF: st{workload}{env}{region}{instance})')
+param storageNameOverride string = ''
+
+@description('Override: Container Registry name (default CAF: cr{workload}{env}{region}{instance})')
+param acrNameOverride string = ''
+
+@description('Override: Log Analytics name (default CAF: log-{workload}-{env}-{region}-{instance})')
+param logAnalyticsNameOverride string = ''
+
+@description('Override: App Insights name (default CAF: appi-{workload}-{env}-{region}-{instance})')
+param appInsightsNameOverride string = ''
+
+// ---------------------------------------------------------------------------
+// CAF Naming Module
+// ---------------------------------------------------------------------------
+
+module naming 'modules/naming.bicep' = {
+  name: 'deploy-naming'
+  params: {
+    workloadName: workloadName
+    environment: environment
+    regionShortName: regionShortName
+    instance: instance
+    hubNameOverride: hubNameOverride
+    projectNameOverride: projectNameOverride
+    openAiNameOverride: openAiNameOverride
+    keyVaultNameOverride: keyVaultNameOverride
+    storageNameOverride: storageNameOverride
+    acrNameOverride: acrNameOverride
+    logAnalyticsNameOverride: logAnalyticsNameOverride
+    appInsightsNameOverride: appInsightsNameOverride
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Existing VNet/Subnet (can be same or different subscription)
@@ -144,13 +200,18 @@ module newServices 'modules/supporting-services.bicep' = {
   name: 'deploy-supporting-services'
   params: {
     location: location
-    suffix: suffix
     peSubnetId: existingPeSubnetId
     dnsZoneIds: dnsZoneIds
     createKeyVault: createKeyVault
     createStorage: createStorage
     createAcr: createAcr
     createLogAnalytics: createLogAnalytics
+    keyVaultName: naming.outputs.keyVaultName
+    storageName: naming.outputs.storageName
+    acrName: naming.outputs.acrName
+    logAnalyticsName: naming.outputs.logAnalyticsName
+    appInsightsName: naming.outputs.appInsightsName
+    pepSuffix: naming.outputs.pepSuffix
   }
 }
 
@@ -202,10 +263,10 @@ module azureOpenAi 'modules/azure-openai.bicep' = if (createOpenAi) {
   name: 'deploy-azure-openai'
   params: {
     location: location
-    suffix: suffix
-    environment: environment
     peSubnetId: existingPeSubnetId
     dnsZoneIds: dnsZoneIds
+    openAiName: naming.outputs.openAiName
+    pepSuffix: naming.outputs.pepSuffix
     modelDeployments: openAiModelDeployments
   }
 }
@@ -221,8 +282,6 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
   name: 'deploy-ai-foundry'
   params: {
     location: location
-    suffix: suffix
-    environment: environment
     peSubnetId: existingPeSubnetId
     computeSubnetId: existingComputeSubnetId
     keyVaultId: createKeyVault ? newServices.outputs.keyVaultId : existingKv.id
@@ -232,6 +291,9 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
     dnsZoneIds: dnsZoneIds
     managedNetworkIsolationMode: managedNetworkIsolationMode
     openAiAccountId: openAiAccountId
+    hubName: naming.outputs.hubName
+    projectName: naming.outputs.projectName
+    pepSuffix: naming.outputs.pepSuffix
   }
 }
 
@@ -247,6 +309,6 @@ output aiProjectName string = aiFoundry.outputs.projectName
 output aiProjectId string = aiFoundry.outputs.projectId
 output hubPrincipalId string = aiFoundry.outputs.hubPrincipalId
 output projectPrincipalId string = aiFoundry.outputs.projectPrincipalId
-output keyVaultName string = createKeyVault ? newServices.outputs.keyVaultName : existingKeyVaultName
-output storageAccountName string = createStorage ? newServices.outputs.storageAccountName : existingStorageAccountName
-output acrName string = createAcr ? newServices.outputs.acrName : existingAcrName
+output keyVaultName string = createKeyVault ? newServices.outputs.keyVaultNameOut : existingKeyVaultName
+output storageAccountName string = createStorage ? newServices.outputs.storageAccountNameOut : existingStorageAccountName
+output acrName string = createAcr ? newServices.outputs.acrNameOut : existingAcrName
