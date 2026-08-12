@@ -54,10 +54,7 @@ module openAiAccount 'br/public:avm/res/cognitive-services/account:0.18.0' = {
     publicNetworkAccess: 'Disabled'
     networkAcls: {
       defaultAction: 'Deny'
-      ipRules: []
-      virtualNetworkRules: []
     }
-    disableLocalAuth: false
     deployments: [for deployment in modelDeployments: {
       name: deployment.name
       model: {
