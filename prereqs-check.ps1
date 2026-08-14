@@ -255,11 +255,17 @@ $subnet = az network vnet subnet show --ids $PeSubnetId --query "{name:name, add
 if ($subnet) {
     Write-Check "PE subnet exists" "PASS" "$($subnet.name) ($($subnet.addressPrefix))"
     
-    # Check PE network policies are disabled
-    if ($subnet.privateEndpointNetworkPolicies -eq "Disabled") {
-        Write-Check "PE network policies disabled" "PASS"
+    # Check PE network policies
+    # Note: 'Disabled' is the legacy default. Newer values like 'NetworkSecurityGroupEnabled',
+    # 'RouteTableEnabled', or 'Enabled' are fine — they enable NSG/UDR on PEs but don't block PE creation.
+    # Only matters if the subnet has NSG rules that would block PE traffic.
+    $pePolicies = $subnet.privateEndpointNetworkPolicies
+    if ($pePolicies -eq "Disabled") {
+        Write-Check "PE network policies" "PASS" "Disabled (no NSG/UDR applied to PEs)"
+    } elseif ($pePolicies -match "Enabled|NetworkSecurityGroupEnabled|RouteTableEnabled") {
+        Write-Check "PE network policies" "PASS" "$pePolicies (PEs will work; NSG/UDR rules apply to PE traffic)"
     } else {
-        Write-Check "PE network policies disabled" "FAIL" "privateEndpointNetworkPolicies must be 'Disabled'. Run: az network vnet subnet update --ids $PeSubnetId --private-endpoint-network-policies Disabled"
+        Write-Check "PE network policies" "WARN" "Value: $pePolicies — verify PE creation is allowed in this subnet"
     }
 
     # Check available IPs
